@@ -61,6 +61,9 @@ pub fn remaining_stack() -> usize {
     &mut () as *mut _ as usize - get_stack_limit()
 }
 
+/// Always creates a new stack for the passed closure to run on.
+/// The closure will still be on the same thread as the caller of `grow`.
+/// This will allocate a new stack with at least `stack_size` bytes.
 #[inline(never)]
 pub fn grow<R, F: FnOnce() -> R>(stack_size: usize, f: F) -> R {
     let mut f = Some(f);

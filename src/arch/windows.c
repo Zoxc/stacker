@@ -12,8 +12,8 @@ size_t __stacker_get_stack_limit() {
 
 #ifdef _M_IX86
 size_t __stacker_get_stack_limit() {
-    return __readgsdword(0xE0C) + // The base address of the stack. Referenced in GetCurrentThreadStackLimits
-           __readgsdword(0xF78) + // The guaranteed pages on a stack overflow. Referenced in SetThreadStackGuarantee
+    return __readfsdword(0xE0C) + // The base address of the stack. Referenced in GetCurrentThreadStackLimits
+           __readfsdword(0xF78) + // The guaranteed pages on a stack overflow. Referenced in SetThreadStackGuarantee
            0x1000; // The guard page
 }
 #endif
@@ -33,11 +33,8 @@ struct Info {
 };
 
 int filter(unsigned int code, struct _EXCEPTION_POINTERS *ep, struct Info *info) {
-    // Don't try to pass noncontinuable exceptions
-    if (ep->ExceptionRecord->ExceptionFlags & EXCEPTION_NONCONTINUABLE) {
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    // Ignore all non-C++ exceptions. Rust uses these for "unwinding panics"
+    // Ignore all non-C++ exceptions
+    // libpanic_unwind uses C++ exceptions to unwind
     if (ep->ExceptionRecord->ExceptionCode != 0xe06d7363) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
@@ -75,14 +72,10 @@ BOOL __stacker_switch_stacks(size_t stack_size, callback_t callback, void *data)
     SwitchToFiber(fiber);
     DeleteFiber(fiber);
     if (info.rethrow == TRUE) {
-        /*RaiseException(info.ExceptionCode,
+        RaiseException(info.ExceptionCode,
                        info.ExceptionFlags,
                        info.NumberParameters,
-                       &info.ExceptionInformation);*/
-                       RaiseException(0xBEEF0000,
-                                      0,
-                                      0,
-                                      0);
+                       &info.ExceptionInformation);
     }
     return TRUE;
 }
