@@ -48,7 +48,7 @@ pub fn maybe_grow<R, F: FnOnce() -> R>(red_zone: usize,
     if remaining_stack() >= red_zone {
         f()
     } else {
-        grow_the_stack(stack_size, f)
+        grow(stack_size, f)
     }
 }
 
@@ -62,10 +62,10 @@ pub fn remaining_stack() -> usize {
 }
 
 #[inline(never)]
-fn grow_the_stack<R, F: FnOnce() -> R>(stack_size: usize, f: F) -> R {
+pub fn grow<R, F: FnOnce() -> R>(stack_size: usize, f: F) -> R {
     let mut f = Some(f);
     let mut ret = None;
-    _grow_the_stack(stack_size, &mut || {
+    _grow(stack_size, &mut || {
         ret = Some(f.take().unwrap()());
     });
     ret.unwrap()
@@ -76,11 +76,9 @@ cfg_if! {
         use std::cell::Cell;
 
         extern {
-            fn __stacker_switch_stacks(new_stack_high: usize,
-                                    new_stack_low: usize,
-                                    fnptr: *const u8,
-                                    dataptr: *mut u8,
-                                    stack_committed: usize);
+            fn __stacker_switch_stacks(dataptr: *mut u8,
+                                       fnptr: *const u8,
+                                       new_stack: usize);
         }
 
         thread_local! {
@@ -98,7 +96,7 @@ cfg_if! {
             STACK_LIMIT.with(|s| s.set(l))
         }
 
-        unsafe fn _grow_the_stack(stack_size: usize, mut f: &mut FnMut()) {
+        fn _grow(stack_size: usize, mut f: &mut FnMut()) {
             // Align to 16-bytes (see below for why)
             let stack_size = (stack_size + 15) / 16 * 16;
 
@@ -122,9 +120,12 @@ cfg_if! {
             } else {
                 0
             };
-            __stacker_switch_stacks(stack.as_mut_ptr() as usize + stack_size - offset,
-                                    doit as usize as *const _,
-                                    &mut f as *mut &mut FnMut() as *mut u8);
+
+            unsafe {
+                __stacker_switch_stacks(&mut f as *mut &mut FnMut() as *mut u8,
+                                        doit as usize as *const _,
+                                        stack.as_mut_ptr() as usize + stack_size - offset);
+            }
 
             // Once we've returned reset bothe stack limits and then return value same
             // value the closure returned.
@@ -148,7 +149,7 @@ cfg_if! {
             f();
         }
 
-        fn _grow_the_stack(stack_size: usize, mut f: &mut FnMut()) {
+        fn _grow(stack_size: usize, mut f: &mut FnMut()) {
             unsafe {
                 println!("dfgdg");
                 if __stacker_switch_stacks(stack_size, doit as usize, &mut f as *mut _ as *mut u8) == winapi::FALSE {
